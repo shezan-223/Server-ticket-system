@@ -26,7 +26,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // MongoDB setup
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@mongopractice.2tbsahv.mongodb.net/?appName=MongoPractice`;
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
@@ -44,6 +44,44 @@ async function run() {
       const result = await ticketCollection.insertOne(ticket);
       res.send(result);
     });
+
+     app.get('/tickets/vendor/:email', async (req, res) => {
+      const email = req.params.email;
+
+      const tickets = await ticketCollection
+        .find({ vendorEmail: email })
+        .toArray();
+
+      res.send(tickets);
+    });
+
+
+   app.delete('/tickets/:id', async (req, res) => {
+  const id = req.params.id;
+  const { ObjectId } = require('mongodb');
+
+  try {
+    const result = await ticketCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Ticket not found" });
+    }
+
+    res.send({ message: "Deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
+   
+
+
+
+
+
+
+
 
     // Image upload route
     app.post('/api/upload', upload.single('image'), (req, res) => {
