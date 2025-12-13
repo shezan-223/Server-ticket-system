@@ -37,7 +37,78 @@ async function run() {
     await client.connect();
     const ticketDB = client.db("ticketbari-db");
     const ticketCollection = ticketDB.collection("tickets");
+    const usersCollection = ticketDB.collection("users");
 
+    
+    // user related Apis
+    app.post('/users', async (req, res) => {
+  const user = req.body;
+
+  const exists = await usersCollection.findOne({ email: user.email });
+  if (exists) {
+    return res.send({ message: "User already exists" });
+  }
+
+  user.role = "user";
+  user.isFraud = false;
+  user.createdAt = new Date();
+
+  const result = await usersCollection.insertOne(user);
+  res.send(result);
+});
+app.get('/users/:email', async (req, res) => {
+    try {
+        const email = req.params.email;
+        const query = { email: email };
+        const user = await usersCollection.findOne(query);
+
+        if (!user) {
+            return res.status(404).send({ message: "User not found" });
+        }
+        res.send(user);
+    } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).send({ message: "Server error" });
+    }
+});
+
+
+app.patch('/users/role/:email', async (req, res) => {
+  const email = req.params.email;
+  const role = req.body.role;
+
+  const result = await usersCollection.updateOne(
+    { email },
+    { $set: { role } }
+  );
+
+  res.send(result);
+});
+    
+
+
+// for fraud
+app.patch('/users/fraud/:email', async (req, res) => {
+  const email = req.params.email;
+
+  const result = await usersCollection.updateOne(
+    { email },
+    { $set: { isFraud: true } }
+  );
+
+  
+  await ticketCollection.updateMany(
+    { vendorEmail: email },
+    { $set: { status: "hidden" } }
+  );
+
+  res.send(result);
+});
+    
+    
+    
+    
+    
     // Ticket creation
     app.post('/tickets', async (req, res) => {
       const ticket = req.body;
