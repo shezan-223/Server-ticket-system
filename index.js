@@ -122,8 +122,166 @@ const verifyUser = (req, res, next) => {
     next();
 };
 
+app.get('/tickets/advertised', async (req, res) => {
+    const result = await ticketCollection
+        .find({ isAdvertised: true, status: 'approved' })
+        .limit(6)
+        .toArray();
+    res.send(result);
+});
+
+// 2. Get Latest Tickets (e.g., last 8 added)
+app.get('/tickets/latest', async (req, res) => {
+    const result = await ticketCollection
+        .find({ status: 'approved' })
+        .sort({ _id: -1 }) // Sorts by newest first
+        .limit(8)
+        .toArray();
+    res.send(result);
+});
 
 
+
+
+
+
+
+
+
+// ADvertise Tickets
+app.patch('/tickets/advertise/:id',verifyToken, verifyAdmin,async(req,res)=>{
+
+const id =req.params.id
+const {isAdvertised}=req.body
+try{
+  if(isAdvertised === true){
+   const currentAdsCount = await ticketCollection.countDocuments({ isAdvertised: true });
+   if (currentAdsCount >= 6) {
+                return res.status(400).send({ message: "You can only advertise up to 6 tickets at a time!" });
+            }
+}
+
+
+const result =await ticketCollection.updateOne(
+  {_id :new ObjectId(id)},
+  {$set: {isAdvertised :isAdvertised}}
+
+  
+)
+res.send (result)
+
+}
+catch (error){
+  res.status(500).send({message:"Internal Server Error "})
+}
+})
+
+
+
+
+
+
+
+
+
+app.get('/tickets/admin/all', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const result = await ticketCollection.find().toArray();
+        res.send(result);
+    } catch (error) {
+        console.error("Error fetching all tickets for admin:", error);
+        res.status(500).send({ message: "Server error while fetching tickets." });
+    }
+});
+
+// tickets approving
+app.patch('/tickets/status/:id', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { status } = req.body; // Expects status: 'approved' or 'rejected'
+        
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).send({ message: "Invalid status value provided." });
+        }
+
+        const result = await ticketCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: status } }
+        );
+
+        res.send(result);
+    } catch (error) {
+        console.error("Error updating ticket status:", error);
+        res.status(500).send({ message: "Server error during status update." });
+    }
+});
+
+
+
+// GET ALL APPROVED TICKETS (Publicly accessible, filtered)
+app.get('/tickets/approved', async (req, res) => {
+    try {
+        // Fetch tickets that are approved AND not hidden (not fraud)
+        const result = await ticketCollection.find({ status: 'approved', isFraud: { $ne: true } }).toArray();
+        res.send(result);
+    } catch (error) {
+        console.error("Error fetching approved tickets:", error);
+        res.status(500).send({ message: "Server error." });
+    }
+});
+
+
+// --- PUBLIC: GET ALL APPROVED TICKETS (FOR "All Tickets" Page) ---
+
+app.get('/tickets/all', async (req, res) => {
+    try {
+        // Fetch tickets that are approved AND not hidden (not fraud)
+        const query = { 
+            status: 'approved', 
+            // Ensures tickets from fraud vendors are excluded
+            isFraud: { $ne: true } 
+        };
+        
+        // This is where you would also apply pagination, sorting, and filtering (challenge requirements)
+        const result = await ticketCollection.find(query).toArray();
+        res.send(result);
+    } catch (error) {
+        console.error("Error fetching approved tickets for All Tickets page:", error);
+        res.status(500).send({ message: "Server error." });
+    }
+});
+
+
+
+// PATCH TICKET ADVERTISE STATUS (and enforce 6 limit)
+app.patch('/tickets/advertise/:id', verifyToken, verifyAdmin, async (req, res) => {
+    const id = req.params.id;
+    const { isAdvertised } = req.body; 
+
+    try {
+        // If Admin is trying to advertise (set to true)
+        if (isAdvertised) {
+            const advertisedCount = await ticketCollection.countDocuments({ isAdvertised: true });
+            
+            // Check if the limit of 6 has been reached
+            if (advertisedCount >= 6) {
+                return res.status(400).send({ message: "Cannot advertise more than 6 tickets." });
+            }
+        }
+        
+        // Perform the update
+        const result = await ticketCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isAdvertised: isAdvertised } }
+        );
+
+        res.send(result);
+
+    } catch (error) {
+        console.error("Error updating advertise status:", error);
+        res.status(500).send({ message: "Server error." });
+    }
+});
 
 
 
