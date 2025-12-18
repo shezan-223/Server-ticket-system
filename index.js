@@ -73,6 +73,7 @@ async function run() {
     const ticketDB = client.db("ticketbari-db");
     const ticketCollection = ticketDB.collection("tickets");
     const usersCollection = ticketDB.collection("users");
+    const bookingCollection = ticketDB.collection("bookings");
 
     app.post('/jwt', async (req, res) => {
     const userEmail = req.body.email;
@@ -283,13 +284,30 @@ app.patch('/tickets/advertise/:id', verifyToken, verifyAdmin, async (req, res) =
     }
 });
 
+// Get bookings for the logged-in user
+
+app.get('/my-bookings/:email', verifyToken, async (req, res) => {
+    const email = req.params.email;
+    // Security check: Ensure the requested email matches the token email
+   const decodedEmail = req.decoded.email;
+   console.log("URL Email:", email);
+    console.log("Token Email:", decodedEmail);
+   
+    if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' });
+    }
+    const query = { userEmail: email };
+    const result = await bookingCollection.find(query).toArray();
+    res.send(result);
+});
+
 
 
 
 
     
     // user related Apis
-    app.post('/users', verifyToken, verifyAdmin, async (req, res) => {
+    app.post('/users', async (req, res) => {
   const user = req.body;
 
   const exists = await usersCollection.findOne({ email: user.email });
@@ -374,6 +392,35 @@ app.patch('/users/fraud/:email',verifyToken , verifyAdmin, async (req, res) => {
     
     
     // Ticket creation
+
+app.get('/tickets/:id', verifyToken, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await ticketCollection.findOne(query);
+    res.send(result);
+});
+
+
+// --- POST: Save a new booking ---
+app.post('/bookings', verifyToken, async (req, res) => {
+    const booking = req.body;
+    
+    // Optional: Double check availability on server side
+    const ticketId = booking.ticketId;
+    const ticket = await ticketCollection.findOne({ _id: new ObjectId(ticketId) });
+    
+    if (!ticket || ticket.quantity < booking.quantity) {
+        return res.status(400).send({ message: "Insufficient ticket quantity" });
+    }
+
+    const result = await bookingCollection.insertOne(booking);
+    res.send(result);
+});
+
+
+
+
+
     app.post('/tickets',verifyToken ,verifyVendor, async (req, res) => {
       const ticket = req.body;
       const result = await ticketCollection.insertOne(ticket);
