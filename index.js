@@ -11,6 +11,11 @@ const jwt =require("jsonwebtoken")
 app.use(express.json());
 app.use(cors());
 
+
+
+
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 // Serve uploaded images
 app.use('/uploads', express.static('uploads'));
 
@@ -74,6 +79,7 @@ async function run() {
     const ticketCollection = ticketDB.collection("tickets");
     const usersCollection = ticketDB.collection("users");
     const bookingCollection = ticketDB.collection("bookings");
+    const paymentCollection = ticketDB.collection("payments");
 
     app.post('/jwt', async (req, res) => {
     const userEmail = req.body.email;
@@ -142,8 +148,104 @@ app.get('/tickets/latest', async (req, res) => {
 });
 
 
+// create Payment intent 
+app.post("/create-payment-intent", verifyToken, async (req, res) => {
+    const { price } = req.body;
+    const amount = parseInt(price * 100); // Stripe works in cents
+
+    const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+    });
+
+    res.send({ clientSecret: paymentIntent.client_secret });
+});
+
+// Save Payment Info & Update Booking Status
+app.post("/payments", verifyToken, async (req, res) => {
+    const payment = req.body;
+    try {
+        // 1. Save payment info
+        const insertResult = await paymentCollection.insertOne(payment);
+
+        // 2. Update booking status to "paid"
+        const filter = { _id: new ObjectId(payment.bookingId) };
+        await bookingCollection.updateOne(filter, { 
+            $set: { status: "paid", transactionId: payment.transactionId } 
+        });
+
+        // 3. REDUCE TICKET QUANTITY
+        const ticketFilter = { _id: new ObjectId(payment.ticketId) };
+        const ticketUpdate = { $inc: { quantity: -payment.quantity } };
+        await ticketCollection.updateOne(ticketFilter, ticketUpdate);
+
+        res.send({ paymentResult: insertResult });
+    } catch (error) {
+        res.status(500).send("Payment processing failed");
+    }
+});
+
+// GET transaction history for a specific user
+app.get('/payments/:email', verifyToken, async (req, res) => {
+    const email = req.params.email;
+    const decodedEmail = req.decoded.email;
+
+    if (email !== decodedEmail) {
+        return res.status(403).send({ message: 'forbidden access' });
+    }
+
+    const query = { userEmail: email };
+    // Sort by date newest first
+    const result = await paymentCollection.find(query).sort({ date: -1 }).toArray();
+    res.send(result);
+});
+
+// Payment Intent Error Handling
+app.post("/create-payment-intent", verifyToken, async (req, res) => {
+    try {
+        const { price } = req.body;
+        if (!price || price <= 0) return res.status(400).send({ message: "Invalid price" });
+
+        const amount = parseInt(price * 100); 
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+        });
+
+        res.send({ clientSecret: paymentIntent.client_secret });
+    } catch (error) {
+        console.error("Stripe Error:", error.message);
+        res.status(500).send({ error: error.message });
+    }
+});
 
 
+
+// Admin Stats API
+app.get('/vendor-stats', verifyToken, verifyVendor, async (req, res) => {
+    try {
+        const totalTickets = await ticketCollection.estimatedDocumentCount();
+        const payments = await paymentCollection.find().toArray();
+        
+        // Calculate total revenue from all payment records
+        const revenue = payments.reduce((total, payment) => total + payment.amount, 0);
+        
+        // Count total tickets sold (assuming 1 payment = tickets sold)
+        // Or you can sum up payment.quantity if you have it
+        const ticketsSold = await paymentCollection.countDocuments();
+
+        res.send({
+            totalTickets,
+            ticketsSold,
+            revenue: revenue.toFixed(2)
+        });
+    } catch (error) {
+        res.status(500).send({ message: "Could not fetch stats" });
+    }
+});
 
 
 
@@ -300,6 +402,35 @@ app.get('/my-bookings/:email', verifyToken, async (req, res) => {
     const result = await bookingCollection.find(query).toArray();
     res.send(result);
 });
+
+
+// get booking info from users
+
+app.get("/vendor-bookings/:email",verifyToken,verifyVendor,async(req,res)=>{
+  const email = req.params.email;
+  if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' });
+    }
+
+const query ={vendorEmail:email};
+const result =await bookingCollection.find(query).toArray()
+res.send(result)
+})
+
+// Vendor action: Accept or Reject a user's booking
+app.patch('/bookings/status/:id', verifyToken, verifyVendor, async (req, res) => {
+    const id = req.params.id;
+    const { status } = req.body; // 'accepted' or 'rejected'
+    
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+        $set: { status: status }
+    };
+    
+    const result = await bookingCollection.updateOne(filter, updateDoc);
+    res.send(result);
+});
+
 
 
 
