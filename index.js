@@ -1,9 +1,16 @@
 const express = require('express');
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
 
 require("dotenv").config();
-const cors = require('cors');
+app.use(cors({
+    origin: [
+        "http://localhost:5173", 
+        "https://your-app-name.vercel.app" // Add this after deploying frontend
+    ],
+    credentials: true
+}));
 const multer = require('multer');
 const path = require('path');
 const jwt =require("jsonwebtoken")
