@@ -1,16 +1,20 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 5000;
+module.exports = app;
 app.listen(port, () => console.log(`Server running on port ${port}`));
 
 require("dotenv").config();
 app.use(cors({
     origin: [
         "http://localhost:5173", 
-        "https://your-app-name.vercel.app" // Add this after deploying frontend
+        "https://TicketBari223.vercel.app" // ⚠️ CHANGE THIS to your actual Vercel link
     ],
     credentials: true
 }));
+
+
 const multer = require('multer');
 const path = require('path');
 const jwt =require("jsonwebtoken")
@@ -606,8 +610,11 @@ app.post('/bookings', verifyToken, async (req, res) => {
     // Image upload route
     app.post('/api/upload', upload.single('image'), (req, res) => {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-      const imageUrl = `http://localhost:${port}/uploads/${req.file.filename}`;
-      res.json({ url: imageUrl });
+      const baseUrl = process.env.NODE_ENV === 'production' 
+    ? "https://your-actual-server-link.vercel.app" // ⚠️ Replace with your SERVER Vercel link
+    : `http://localhost:${port}`;
+     const imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
+  res.json({ url: imageUrl });
     });
 
     console.log("MongoDB connected and routes are ready");
@@ -621,6 +628,8 @@ app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(port, () => {
+        console.log(`Server running on port ${port}`);
+    });
+}
